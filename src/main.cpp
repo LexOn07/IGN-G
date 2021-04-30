@@ -105,7 +105,7 @@ String getValue(String data, char separator, int index)
 {
   int found = 0;
   int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
+  int maxIndex = data.length() - 1;
 
   for(int i=0; i<=maxIndex && found<=index; i++){
     if(data.charAt(i)==separator || i==maxIndex){
@@ -114,6 +114,7 @@ String getValue(String data, char separator, int index)
         strIndex[1] = (i == maxIndex) ? i+1 : i;
     }
   }
+  return found> index ? data.substring (strIndex [0], strIndex [1]): "";
 }
 void ISR_func() {
   tachometr.tick();
@@ -137,29 +138,42 @@ void setup() {
 void loop() {
   if(uart.available()){
     String temp = uart.readString();
-    if(temp == "Base" || temp == "Timing" || temp == "Temp" || temp == "Linear" || temp == "0"){
+    if(temp == "Base" || temp == "Timing" || temp == "Temp" || temp == "Linear" || temp == "Sett"){
       uartRead = temp;
-    }
-    if (uartRead == "0"){
-      write(2000);
     }
     if (uartRead == "Timing_RPM_Wait"){
       for (int i = 0; i < 12; i++){
         arr_timing_rpm[i] = getValue(temp,' ', i).toInt();
       }
+      write_arr_timing_rpm();
       uartRead = "Base";
     }
     if (uartRead == "Timing_TEMP_Wait"){
       for (int i = 0; i < 12; i++){
         arr_timing_temp[i] = getValue(temp,' ', i).toInt();
       }
+      write_arr_timing_temp();
       uartRead = "Base";
     }
     if (uartRead == "Linear_TEMP_Wait"){
       for (int i = 0; i < 12; i++){
         arr_sens_voltage[i] = getValue(temp,' ', i).toInt();
       }
+      write_arr_sens_voltage();
       uartRead = "Base";
+    }
+    if (uartRead == "SETT_Wait"){
+      rpm_max = getValue(temp,' ', 0).toInt();
+      temp_max = getValue(temp,' ', 1).toInt();
+      TEMP_timer_delay = getValue(temp,' ', 2).toInt();
+      rpm_over = getValue(temp,' ', 3).toInt();
+      PVrpm_max = getValue(temp,' ', 4).toInt();
+      pwm_max_time = getValue(temp,' ', 5).toInt();
+      pwm_max = getValue(temp,' ', 6).toInt();
+      pwm_const = getValue(temp,' ', 7).toInt();
+      off_timer = getValue(temp,' ', 8).toInt();
+      timing_corrector = getValue(temp,' ', 9).toInt();
+      write_sett();
     }
   }
   engine_RPM = tachometr.getRPM();
@@ -210,6 +224,20 @@ void loop() {
       }
       uartRead = "Linear_TEMP_Wait";
   }
+  if (uartRead == "Sett"){
+      uart.print("SETT*");
+      uart.print(String(rpm_max) + " ");
+      uart.print(String(temp_max) + " ");
+      uart.print(String(TEMP_timer_delay) + " ");
+      uart.print(String(rpm_over) + " ");
+      uart.print(String(PVrpm_max) + " ");
+      uart.print(String(pwm_max_time) + " ");
+      uart.print(String(pwm_max) + " ");
+      uart.print(String(pwm_const) + " ");
+      uart.print(String(off_timer) + " ");
+      uart.print(String(timing_corrector) + " ");
+      uartRead = "SETT_Wait";
+  } 
   if (ignition_timer.isReady()){
     ignition_off_timer.setTimeout(off_timer);
     digitalWrite(22, true);

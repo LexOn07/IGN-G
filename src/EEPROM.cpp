@@ -91,6 +91,46 @@ static int asa(){
     EEPROM.get(20, zzz);
     return zzz;
 }
+static void write_arr_timing_rpm(){
+    static int counter = 0;
+    static int iter = 0;
+    for (int number : arr_timing_rpm){
+        EEPROM.put(20 + counter, arr_timing_rpm[iter]);
+        counter = counter + 4;
+        iter++;
+    }
+}
+static void write_arr_timing_temp(){
+    static int counter = 0;
+    static int iter = 0;
+    for (int number : arr_timing_temp){
+        EEPROM.put(68 + counter, arr_timing_temp[iter]);
+        counter = counter + 4;
+        iter++;
+    }
+}
+static void write_arr_sens_voltage(){
+    static int counter = 0;
+    static int iter = 0;
+    for (int number : arr_sens_voltage){
+        EEPROM.put(116 + counter, arr_sens_voltage[iter]);
+        counter = counter + 4;
+        iter++;
+    }
+}
+static void write_sett(){
+    EEPROM.put(0, rpm_max);
+    EEPROM.put(2, rpm_over);
+    EEPROM.put(4, temp_max);
+    EEPROM.put(6, PVrpm_max);
+    EEPROM.put(8, pwm_max);
+    EEPROM.put(10, pwm_const);
+    EEPROM.put(12, pwm_max_time);
+    EEPROM.put(14, timing_corrector);
+    EEPROM.put(16, off_timer);
+    EEPROM.put(18, UART_timer_delay);
+    EEPROM.put(20, TEMP_timer_delay);
+}    
 #endif
 
 
