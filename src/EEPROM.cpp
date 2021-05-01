@@ -86,11 +86,6 @@ static void write_arr_eeprom(unsigned long data[], String type){
 static void write(int a){
     EEPROM.put(0, a);
 }
-static int asa(){
-    int zzz;
-    EEPROM.get(20, zzz);
-    return zzz;
-}
 static void write_arr_timing_rpm(){
     static int counter = 0;
     static int iter = 0;

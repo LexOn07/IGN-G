@@ -9,7 +9,12 @@
 //--------------------------------------------//
 #define pin_EEPROM_reset 13  //пин сброса EEPROM в стандартное состояние
 #define pin_sensor_temp 0    //пин датчика температуры двигателя
+#define pin_revers_PV 10     //пин реверса мощностного клапана
+#define pin_pwm_PV 8         //пин шим мощностного клапана
 #define filter_const 50      //Знчение фильтра подбираеться в ручную
+#define hyster_const 200     //Гистерезис для переключений мощностного клапана
+#define PW_time_const 500    //Время между переключениями мощностного клапана (подбираеться в ручную)
+#define rpm_over_time 200    //Время отключения двигателя при превышении оборотов
 //--------------------------------------------//
 int rpm_max = 7500; //Диапазон оборотов двигателя 0
 int rpm_over = 8000;//обороты отсечки 1
@@ -35,6 +40,9 @@ GTimer UART_timer(MS, UART_timer_delay);
 GTimer ignition_timer(US);
 GTimer ignition_off_timer(US);
 GTimer temp_timer(MS, TEMP_timer_delay);
+GTimer PW_timer(MS, PW_time_const);
+GTimer pwm_max_PW_timer(MS, pwm_max_time);
+GTimer over(MS, rpm_over_time);
 Tacho tachometr;
 RingAverage<int, filter_const> fil;
 
@@ -42,6 +50,7 @@ RingAverage<int, filter_const> fil;
 #include "EEPROM.cpp"
 #include "powerValve.cpp"
 
+bool ignition_on = true;         //разрешение подачи искры
 unsigned long engine_RPM = 0;    //обороты двигателя (на лету)
 unsigned long engine_temp = 0;   //температура двигателя (на лету)
 unsigned long table_RPM = 0;     //задержка по таблице оборотов (на лету)
@@ -50,7 +59,9 @@ bool connectUART = false;        //
 String uartRead = "Base";        //Прочитаные данные из УАРТ 
 
 void ignition(){
-  ignition_timer.setTimeout((arr_timing_rpm[table_RPM] * engine_RPM / arr_rpm[table_RPM]) + arr_timing_temp[table_temp] + timing_corrector);
+  if(ignition_on){
+    ignition_timer.setTimeout((arr_timing_rpm[table_RPM] * engine_RPM / arr_rpm[table_RPM]) + arr_timing_temp[table_temp] + timing_corrector);
+  }
 }
 void rpm_generation(){
   for (int i=0; i < 12; i++){
@@ -123,13 +134,15 @@ void ISR_func() {
 void setup() {
   /*TCCR1A = TCCR1A & 0xe0 | 1;
   TCCR1B = TCCR1B & 0xe0 | 0x0a;*/
-  pinMode(10, OUTPUT);
+  pinMode(pin_pwm_PV, OUTPUT);
   pinMode(22, OUTPUT);
   uart.begin(115200);
   attachInterrupt(1, ISR_func, RISING); //Перывания для датчика коленвала
   start_read_eeprom(rpm_max, rpm_over, temp_max, PVrpm_max, pwm_max, pwm_const, pwm_max_time, timing_corrector, off_timer, UART_timer_delay, TEMP_timer_delay); //Читаем данные из ЕЕПРОМ если не верные то перезаписывем из прошивки
   rpm_generation();  //Генерируем сетку оборотов от которой отталкиваемся во время работы
   temp_generation(); //Генерируем сетку температуры от которой отталкиваемся во время работы
+  setupRegulator(pin_revers_PV, PVrpm_max, hyster_const);
+  pwm_max_PW_timer.stop();
   //Timer2.setFrequency(8000); 
   //Timer2.outputEnable(CHANNEL_A, TOGGLE_PIN);
   //Timer2.outputState(CHANNEL_A, HIGH);
@@ -173,6 +186,7 @@ void loop() {
       pwm_const = getValue(temp,' ', 7).toInt();
       off_timer = getValue(temp,' ', 8).toInt();
       timing_corrector = getValue(temp,' ', 9).toInt();
+      setupRegulator(pin_revers_PV, PVrpm_max, hyster_const);
       write_sett();
     }
   }
@@ -182,12 +196,22 @@ void loop() {
     voltage_to_temp(analogRead(0));
     define_table_temp();
   }
+  if(PW_timer.isReady()){
+    bool last_PW_position = get_PV_position();
+    if(PV_position() != last_PW_position){
+      pwm_max_PW_timer.start();
+      analogWrite(pin_pwm_PV, pwm_max);
+    };
+  }
+  if(pwm_max_PW_timer.isReady()){
+    analogWrite(pin_pwm_PV, pwm_const);
+  }
   if(UART_timer.isReady()) {
     if (uartRead == "Base"){
       uart.print("US:" + String((arr_timing_rpm[table_RPM] * engine_RPM / arr_rpm[table_RPM]) + arr_timing_temp[table_temp] + timing_corrector) + " ");
       uart.print("RPM:" + String(engine_RPM) + " ");
       uart.print("TEMP:" + String(engine_temp) + " ");
-      uart.print("PW:" + String("1") + " ");
+      uart.print("PW:" + String(get_PV_position()) + " ");
       //uart.print(String(asa()));
     }  
   }
@@ -238,11 +262,16 @@ void loop() {
       uart.print(String(timing_corrector) + " ");
       uartRead = "SETT_Wait";
   } 
-  if (ignition_timer.isReady()){
+  if (ignition_timer.isReady() ){
     ignition_off_timer.setTimeout(off_timer);
     digitalWrite(22, true);
   }
   if (ignition_off_timer.isReady()){
     digitalWrite(22, false); 
+  }
+  if(engine_RPM > rpm_max){
+    ignition_on = false;
+  }else{
+    ignition_on = true;
   }
 }
