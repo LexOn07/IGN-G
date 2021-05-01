@@ -9,8 +9,8 @@
 //--------------------------------------------//
 #define pin_EEPROM_reset 13  //пин сброса EEPROM в стандартное состояние
 #define pin_sensor_temp 0    //пин датчика температуры двигателя
-#define pin_revers_PV 10     //пин реверса мощностного клапана
-#define pin_pwm_PV 8         //пин шим мощностного клапана
+#define pin_revers_PV 32     //пин реверса мощностного клапана
+#define pin_pwm_PV 7         //пин шим мощностного клапана
 #define filter_const 50      //Знчение фильтра подбираеться в ручную
 #define hyster_const 200     //Гистерезис для переключений мощностного клапана
 #define PW_time_const 500    //Время между переключениями мощностного клапана (подбираеться в ручную)
@@ -50,6 +50,7 @@ RingAverage<int, filter_const> fil;
 #include "EEPROM.cpp"
 #include "powerValve.cpp"
 
+bool last_PW_position = 1;
 bool ignition_on = true;         //разрешение подачи искры
 unsigned long engine_RPM = 0;    //обороты двигателя (на лету)
 unsigned long engine_temp = 0;   //температура двигателя (на лету)
@@ -60,7 +61,7 @@ String uartRead = "Base";        //Прочитаные данные из УАР
 
 void ignition(){
   if(ignition_on){
-    ignition_timer.setTimeout((arr_timing_rpm[table_RPM] * engine_RPM / arr_rpm[table_RPM]) + arr_timing_temp[table_temp] + timing_corrector);
+    ignition_timer.setTimeout(10 * ((arr_timing_rpm[table_RPM] * engine_RPM / arr_rpm[table_RPM]) + arr_timing_temp[table_temp] + timing_corrector));
   }
 }
 void rpm_generation(){
@@ -132,10 +133,11 @@ void ISR_func() {
   ignition();
 }
 void setup() {
-  /*TCCR1A = TCCR1A & 0xe0 | 1;
-  TCCR1B = TCCR1B & 0xe0 | 0x0a;*/
+  TCCR4A = TCCR4A & 0xe0 | 1;
+  TCCR4B = TCCR4B & 0xe0 | 0x09;
   pinMode(pin_pwm_PV, OUTPUT);
   pinMode(22, OUTPUT);
+  pinMode(pin_revers_PV, OUTPUT);         //пин реле
   uart.begin(115200);
   attachInterrupt(1, ISR_func, RISING); //Перывания для датчика коленвала
   start_read_eeprom(rpm_max, rpm_over, temp_max, PVrpm_max, pwm_max, pwm_const, pwm_max_time, timing_corrector, off_timer, UART_timer_delay, TEMP_timer_delay); //Читаем данные из ЕЕПРОМ если не верные то перезаписывем из прошивки
@@ -143,6 +145,7 @@ void setup() {
   temp_generation(); //Генерируем сетку температуры от которой отталкиваемся во время работы
   setupRegulator(pin_revers_PV, PVrpm_max, hyster_const);
   pwm_max_PW_timer.stop();
+  over.stop();
   //Timer2.setFrequency(8000); 
   //Timer2.outputEnable(CHANNEL_A, TOGGLE_PIN);
   //Timer2.outputState(CHANNEL_A, HIGH);
@@ -197,14 +200,18 @@ void loop() {
     define_table_temp();
   }
   if(PW_timer.isReady()){
-    bool last_PW_position = get_PV_position();
-    if(PV_position() != last_PW_position){
+    if(PV_position() != last_PW_position){  
+      digitalWrite(pin_revers_PV, !last_PW_position);
       pwm_max_PW_timer.start();
       analogWrite(pin_pwm_PV, pwm_max);
+      last_PW_position = !last_PW_position;
     };
   }
   if(pwm_max_PW_timer.isReady()){
     analogWrite(pin_pwm_PV, pwm_const);
+  }
+  if(over.isReady()){
+    ignition_on = true;
   }
   if(UART_timer.isReady()) {
     if (uartRead == "Base"){
@@ -263,15 +270,15 @@ void loop() {
       uartRead = "SETT_Wait";
   } 
   if (ignition_timer.isReady() ){
-    ignition_off_timer.setTimeout(off_timer);
     digitalWrite(22, true);
+    ignition_off_timer.setTimeout(off_timer);
+
   }
   if (ignition_off_timer.isReady()){
     digitalWrite(22, false); 
   }
   if(engine_RPM > rpm_max){
     ignition_on = false;
-  }else{
-    ignition_on = true;
+    over.start();
   }
 }
