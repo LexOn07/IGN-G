@@ -10,7 +10,9 @@
 #define pin_EEPROM_reset 13  //пин сброса EEPROM в стандартное состояние
 #define pin_sensor_temp 0    //пин датчика температуры двигателя
 #define pin_revers_PV 32     //пин реверса мощностного клапана
+#define pin_freq_divider 24  //пин делителя частоты
 #define pin_pwm_PV 7         //пин шим мощностного клапана
+#define pin_ignition 22      //пин зажигания
 #define filter_const 50      //Знчение фильтра подбираеться в ручную
 #define hyster_const 200     //Гистерезис для переключений мощностного клапана
 #define PW_time_const 500    //Время между переключениями мощностного клапана (подбираеться в ручную)
@@ -58,6 +60,7 @@ unsigned long table_RPM = 0;     //задержка по таблице обор
 unsigned long table_temp = 0;    //задержка по таблице температуры (на лету)
 bool connectUART = false;        // 
 String uartRead = "Base";        //Прочитаные данные из УАРТ 
+bool freq_divider_flag = true;   //Флаг делителя частоты
 
 void ignition(){
   if(ignition_on){
@@ -100,16 +103,10 @@ void define_table_temp(){
     }
   }
 } 
-unsigned long tmp;
-unsigned long tmp2;
-unsigned long tmp3;
 void voltage_to_temp(int volt){
   for (int i=0; i < 12; i++){
     if(arr_sens_voltage[i] <= volt){
       engine_temp = arr_temp[i] * volt / arr_sens_voltage[i];
-      tmp = arr_temp[i];
-      tmp2 = volt;
-      tmp3 = arr_sens_voltage[i];
     }
   }
 }
@@ -270,12 +267,18 @@ void loop() {
       uartRead = "SETT_Wait";
   } 
   if (ignition_timer.isReady() ){
-    digitalWrite(22, true);
+    digitalWrite(pin_ignition, true);
+    if(freq_divider_flag){
+      digitalWrite(pin_freq_divider, true);
+      freq_divider_flag = !freq_divider_flag;
+    }else{
+      digitalWrite(pin_freq_divider, false);
+      freq_divider_flag = !freq_divider_flag;
+    }
     ignition_off_timer.setTimeout(off_timer);
-
   }
   if (ignition_off_timer.isReady()){
-    digitalWrite(22, false); 
+    digitalWrite(pin_ignition, false); 
   }
   if(engine_RPM > rpm_max){
     ignition_on = false;
